@@ -1,6 +1,9 @@
 # Piece recognizer
 
 `pieces.npz` contains the NumPy weights for the classifier used when joining a board in progress.
+**This file is deliberately not part of the repository or of shared builds** (`/models/*.npz` is
+git-ignored and `python tools/build_release.py --no-model` leaves it out). Without it, joining a game
+that is already under way is not available: the app says so and asks for a new game.
 It is not needed to follow ordinary moves from a known starting position. Without the model,
 ChessCoach cannot automatically reconstruct a new position after the live board drifts out of sync;
 restart the session or re-enter the position instead.

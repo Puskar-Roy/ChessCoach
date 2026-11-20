@@ -5,6 +5,9 @@ const path = require('path');
 const { PythonBackend } = require('./python');
 
 const ROOT = path.resolve(__dirname, '..');
+// Scripted windows, a separate profile and the like are for development and tests; an installed app ignores them
+// unless it is explicitly started in test mode.
+const DEV_HOOKS = !app.isPackaged || process.env.CHESSCOACH_TEST === '1';
 // Mica / acrylic window materials need Windows 11 (build 22621+); older systems get a solid window.
 const HAS_MATERIAL = Number(os.release().split(".")[2]) >= 22621 && !process.env.CHESSCOACH_SOLID;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -39,7 +42,7 @@ let pickerWaiter = null;
 
 // Keep animations running when the window is behind others (the dock panel lives next to a browser).
 app.setAppUserModelId('com.chesscoach.app');
-if (process.env.CHESSCOACH_PROFILE) app.setPath('userData', process.env.CHESSCOACH_PROFILE); // separate profile: lets tests run beside a real session
+if (DEV_HOOKS && process.env.CHESSCOACH_PROFILE) app.setPath('userData', process.env.CHESSCOACH_PROFILE); // separate profile: lets tests run beside a real session
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => { const w = dockWin || mainWin; if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); } });
 
@@ -49,7 +52,7 @@ function pagePath(name) { return path.join(__dirname, 'renderer', name); }
 function baseOptions(extra) {
   return {
     show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false, offscreen: Boolean(process.env.CHESSCOACH_OFFSCREEN) },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false, offscreen: DEV_HOOKS && Boolean(process.env.CHESSCOACH_OFFSCREEN) },
     ...extra,
   };
 }
@@ -283,7 +286,7 @@ function handleEvent(event, data) {
 // -------------------------------------------------------------------- app
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  backend = new PythonBackend(ROOT, app.getPath('userData'));
+  backend = new PythonBackend(ROOT, app.getPath('userData'), app.isPackaged);
   backend.on('event', handleEvent);
   ipcMain.handle('py:call', (_e, cmd, args) => backend.call(cmd, args));
   ipcMain.handle('session:start', async (_e, options) => {
@@ -305,12 +308,23 @@ app.whenReady().then(async () => {
     broadcast('backend-exit', { code });
     if (live.running) teardownLive();
   });
+  if (process.argv.includes('--self-test')) { // `ChessCoach.exe --self-test`: check the bundled parts work, print a report, exit
+    await backend.start();
+    let report;
+    try { report = await backend.call('app.selftest'); } catch (error) { report = { ok: false, problems: [error.message] }; }
+    report.app = { version: app.getVersion(), electron: process.versions.electron, packaged: app.isPackaged, resources: process.resourcesPath };
+    process.stdout.write(`${JSON.stringify(report, null, 2)}
+`);
+    require('fs').writeFileSync(path.join(app.getPath('userData'), 'selftest.json'), JSON.stringify(report, null, 2));
+    app.exit(report.ok ? 0 : 1);
+    return;
+  }
   createMain();
   await backend.start();
-  if (process.env.CHESSCOACH_SCRIPT) {
+  if (DEV_HOOKS && process.env.CHESSCOACH_SCRIPT) {
     setTimeout(() => require('./devscript').run(process.env.CHESSCOACH_SCRIPT, () => ({ main: mainWin, dock: dockWin, picker: pickerWin, overlay: overlayWin }), backend, app, handleEvent), 1500);
   }
-  if (process.env.CHESSCOACH_PICKER_DEMO) {
+  if (DEV_HOOKS && process.env.CHESSCOACH_PICKER_DEMO) {
     setTimeout(() => openPicker(JSON.parse(require('fs').readFileSync(process.env.CHESSCOACH_PICKER_DEMO, 'utf8'))), 1800);
   }
 

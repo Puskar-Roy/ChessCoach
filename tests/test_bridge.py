@@ -190,3 +190,32 @@ def test_a_game_under_way_can_be_joined_with_no_questions_asked(tmp_path, monkey
     assert position["userColor"] == "white" and position["turn"] == "w"
     started = app.handle("capture.confirm", {"x": x, "y": y, "size": size, "fen": position["fen"], "color": position["userColor"]})
     assert started["ok"] and started["fen"]
+
+
+def test_without_the_piece_model_a_game_under_way_is_declined_with_a_clear_message(tmp_path, monkeypatch):
+    """Builds that do not include models/pieces.npz cannot join a game in progress, and say so plainly."""
+    import io
+
+    import chess
+    import numpy as np
+
+    import bridge
+    import piece_classifier
+    import sitegen
+    from test_watcher import FakeScreen
+
+    monkeypatch.setenv("CHESSCOACH_DATA", str(tmp_path))
+    monkeypatch.setattr(piece_classifier, "_model", None)  # "no model installed"
+    rng = np.random.default_rng(8)
+    board = chess.Board()
+    for san in "d4 d5 c4 e6 Nc3 Nf6".split():
+        board.push_san(san)
+    image = sitegen.render_board(board, chess.WHITE, 64, "blue", "wood", last_move=board.peek(), rng=np.random.default_rng(2))
+    page, (x, y, size) = sitegen.page_around(image, rng, margin_dark=True)
+    app = bridge.Bridge(io.StringIO())
+    app.capture = FakeScreen(page, (x, y, size))
+    app.monitor_screen = page
+
+    answer = app.handle("capture.confirm", {"x": x, "y": y, "size": size})
+    assert not answer["ok"] and answer["joinable"] is False
+    assert "not available in this version" in answer["message"] and "starting position" in answer["message"]

@@ -1,6 +1,6 @@
 # Contributing
 
-Follow [the source setup](README.md#run-from-source), then install `requirements-dev.txt` and run
+Follow the [setup guide](docs/setup.md) (or [the short version](README.md#run-from-source)), read [how it works](docs/architecture.md), then install `requirements-dev.txt` and run
 the Python tests. Most vision tests use synthetic boards, so you do not need a camera or an
 interactive desktop. Tests that need Stockfish skip if the executable is not installed.
 

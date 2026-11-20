@@ -77,6 +77,8 @@ class Bridge:
                 "systems": describe_systems(),
                 "history": store.load_history(),
             }
+        if cmd == "app.selftest":
+            return self._selftest()
         if cmd == "settings.save":
             self.settings.update(args)
             store.save_settings(self.settings)
@@ -106,6 +108,66 @@ class Bridge:
             self.controller.send(args["kind"], **args.get("data", {}))
             return {}
         raise ValueError(f"Unknown command: {cmd}")
+
+    def _selftest(self) -> dict:
+        """Proof that everything the app needs is present and works: used by `ChessCoach --self-test` after a build."""
+        import numpy as np
+
+        from engine import Engine, find_stockfish
+        from openings import OpeningBook
+        from piece_classifier import get_model
+        from voice import Voice
+
+        report = {"frozen": bool(getattr(sys, "frozen", False)), "python": sys.version.split()[0], "ok": True, "problems": []}
+
+        def check(name, test):
+            try:
+                report[name] = test()
+            except Exception as error:  # report every failure, not just the first
+                report[name] = None
+                report["ok"] = False
+                report["problems"].append(f"{name}: {error}")
+
+        def engine():
+            path = find_stockfish()
+            with Engine(path=path, time_limit=0.2) as e:
+                move = e.best_move(chess.Board())
+            return {"path": path, "bestMoveFromStart": move.uci() if move else None}
+
+        def model():
+            loaded = get_model()
+            if loaded is None:  # optional: without it joining a game in progress is unavailable, nothing else changes
+                report.setdefault("warnings", []).append("piece recogniser (models/pieces.npz) not installed: joining a game in progress is not available")
+                return {"present": False}
+            return {"present": True, "outputs": int(loaded.layers[-1][1].shape[0])}
+
+        def vision():
+            from piece_cluster import analyse_position
+
+            result = analyse_position(np.zeros((480, 480, 3), np.uint8))
+            return {"emptyBoardRefused": not result["ok"]}
+
+        def screen():
+            from screen_capture import ScreenCapture
+
+            capture = ScreenCapture(1)
+            ok, frame = capture.read()
+            capture.release()
+            return {"canCapture": bool(ok)}
+
+        check("engine", engine)
+        check("model", model)
+        check("openings", lambda: len(OpeningBook.load().openings))
+        check("vision", vision)
+        check("screen", screen)
+        def voice():
+            speaker = Voice(enabled=True)
+            result = {"available": bool(speaker.available), "error": speaker.error}
+            speaker.close()
+            return result  # a PC with no speech voice is not a failure: the coach is silent then
+
+        check("voice", voice)
+        return report
 
     # ------------------------------------------------------------ board capture
     def _release_capture(self) -> None:
@@ -165,7 +227,15 @@ class Bridge:
         else:
             check = check_start_position(image)
         if not check.ok:
-            return {"ok": False, "message": check.message, "x": x, "y": y, "size": size, "joinable": "already under way" in check.message}
+            under_way = "already under way" in check.message
+            if under_way:
+                from piece_classifier import get_model
+
+                if get_model() is None:  # joining mid-game needs the piece recogniser, which this build does not include
+                    return {"ok": False, "x": x, "y": y, "size": size, "joinable": False,
+                            "message": "This game is already under way. Joining a game in progress is not available in this version: "
+                                       "start a new game and select the board while it shows the starting position."}
+            return {"ok": False, "message": check.message, "x": x, "y": y, "size": size, "joinable": under_way}
         board = GameState(check.user_color, fen).board
         watcher = BoardWatcher(self.capture, check.user_color)
         try:

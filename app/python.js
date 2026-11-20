@@ -6,9 +6,10 @@ const { EventEmitter } = require('events');
 const readline = require('readline');
 
 class PythonBackend extends EventEmitter {
-  constructor(root, dataDir) {
+  constructor(root, dataDir, packaged = false) {
     super();
     this.root = root;
+    this.packaged = packaged;
     this.dataDir = dataDir;
     this.next = 1;
     this.pending = new Map();
@@ -16,17 +17,22 @@ class PythonBackend extends EventEmitter {
     this.ready = null;
   }
 
-  static interpreter(root) {
+  /** How to start the coach: the frozen backend of an installed app, or Python on a development checkout. */
+  static command(root, packaged) {
+    if (packaged) {
+      const exe = path.join(process.resourcesPath, 'backend', 'chesscoach-backend.exe');
+      return { file: exe, args: [], cwd: path.dirname(exe) };
+    }
     const venv = path.join(root, '.venv', 'Scripts', 'python.exe');
-    return fs.existsSync(venv) ? venv : 'python';
+    return { file: fs.existsSync(venv) ? venv : 'python', args: ['-u', 'bridge.py'], cwd: root };
   }
 
   start() {
     this.ready = new Promise((resolve) => { this._resolveReady = resolve; });
     const env = { ...process.env, CHESSCOACH_DATA: this.dataDir, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' };
-    this.proc = spawn(PythonBackend.interpreter(this.root), ['-u', 'bridge.py'], {
-      cwd: this.root, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const { file, args, cwd } = PythonBackend.command(this.root, this.packaged);
+    this.proc = spawn(file, args, { cwd, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.proc.on('error', (error) => { this.emit('exit', `cannot start: ${error.message}`); });
     readline.createInterface({ input: this.proc.stdout }).on('line', (line) => this._onLine(line));
     this.proc.stderr.on('data', (chunk) => process.stderr.write(chunk));
     this.proc.on('exit', (code) => {
@@ -54,7 +60,8 @@ class PythonBackend extends EventEmitter {
 
   call(cmd, args = {}) {
     return new Promise((resolve, reject) => {
-      if (!this.proc || this.proc.killed) { reject(new Error('The coach engine is not running.')); return; }
+      const stdin = this.proc && this.proc.stdin;
+      if (!this.proc || this.proc.killed || this.stopping || !stdin || !stdin.writable) { reject(new Error('The coach engine is not running.')); return; }
       const id = this.next++;
       this.pending.set(id, { resolve, reject });
       this.proc.stdin.write(JSON.stringify({ id, cmd, args }) + '\n');
@@ -63,6 +70,7 @@ class PythonBackend extends EventEmitter {
 
   stop() {
     if (!this.proc) return;
+    this.stopping = true; // no more requests: writing to a closed pipe would throw
     try { this.proc.stdin.end(); } catch { /* already closed */ }
     setTimeout(() => { try { this.proc.kill(); } catch { /* gone */ } }, 1500).unref();
   }

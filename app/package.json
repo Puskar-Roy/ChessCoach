@@ -10,9 +10,78 @@
   },
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^45.4.1"
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "productName": "ChessCoach",
+  "author": "Puskar-Roy",
+  "build": {
+    "appId": "com.chesscoach.app",
+    "productName": "ChessCoach",
+    "copyright": "Copyright (c) ChessCoach contributors. GPL-3.0-or-later.",
+    "directories": {
+      "output": "../release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "python.js",
+      "devscript.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/dist/backend",
+        "to": "backend"
+      },
+      {
+        "from": "../LICENSE",
+        "to": "licenses/LICENSE.txt"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "licenses/THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "electronLanguages": [
+      "en-US"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "ChessCoach-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "ChessCoach-${version}-portable.exe"
+    }
   }
 }
