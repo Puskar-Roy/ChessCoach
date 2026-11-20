@@ -1,0 +1,34 @@
+# Python
+/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Downloaded dependencies and build output
+/bin/
+node_modules/
+/dist/
+/app/dist/
+
+# Local app state and diagnostics
+/.chesscoach/
+/data/calibration.json
+/data/settings.json
+/data/history.json
+/data/debug/
+/models/*.npz
+!/models/*.example.npz
+*.log
+devscript.log.json
+
+# Optional local screenshot regression fixtures
+/tests/data/chesscom_midgame_black.png
+/tests/data/chesscom_start_black.png
+
+# OS and environment files
+.DS_Store
+Thumbs.db
+.env
+.env.*

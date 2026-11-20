@@ -1,0 +1,6 @@
+chess
+pyttsx3
+comtypes; sys_platform == "win32"
+opencv-python
+numpy
+mss>=10.2
